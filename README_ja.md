@@ -4,13 +4,13 @@
 [![Demo](https://img.shields.io/badge/Demo-HuggingFace%20Space-blue)](https://huggingface.co/spaces/Aratako/T5Gemma-TTS-Demo)
 [![License: MIT](https://img.shields.io/badge/Code%20License-MIT-green.svg)](LICENSE)
 
-**[🚀 超シンプル版はこちら](README_SIMPLE.md)**
+**[👨‍💻 開発者向けコードガイド](DEVELOPER_GUIDE.md)**
 
 ![Architecture](figures/architecture.png)
 
 Encoder-Decoder LLMアーキテクチャに基づく多言語Text-to-Speechモデル **T5Gemma-TTS** の学習および推論コードです。このリポジトリでは、データ前処理、学習（LoRAファインチューニングを含む）、推論のためのスクリプトを提供しています。
 
-> **注意**: 複雑な設定なしで素早くTTSを試したい場合は、最小限の依存関係と簡単なインターフェースを持つ[**超シンプル版**](README_SIMPLE.md)をご覧ください！
+> **開発者向け**: コードの仕組みを理解したいですか？[**開発者ガイド**](DEVELOPER_GUIDE.md)と[minimal_example.py](minimal_example.py)でアーキテクチャの説明とコード解説をご覧ください。
 
 モデルの詳細、音声サンプル、技術情報については、[モデルカード](https://huggingface.co/Aratako/T5Gemma-TTS-2b-2b)を参照してください。
 
