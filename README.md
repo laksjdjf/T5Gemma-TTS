@@ -19,6 +19,7 @@ For model details, audio samples, and technical information, please refer to the
 - **Duration Control**: Explicit control over generated audio length (auto-estimation when not specified)
 - **Flexible Training**: Full training, fine-tuning, and LoRA fine-tuning support
 - **Multiple Inference Options**: Command-line, HuggingFace format, and Gradio UI
+- **Masked Diffusion**: Non-autoregressive masked diffusion model for faster parallel generation (experimental)
 
 ## Installation
 
@@ -162,6 +163,28 @@ EXTRA_ARGS="--no_compile --share" docker compose up
 | `--top_p` | 0.9 | Top-p (nucleus) sampling parameter |
 | `--temperature` | 0.8 | Sampling temperature |
 | `--seed` | 1 | Random seed for reproducibility |
+
+## Masked Diffusion (Experimental)
+
+T5Gemma-TTS now supports a non-autoregressive **Masked Diffusion** model as an alternative to the standard autoregressive generation. This approach:
+
+- Generates tokens in parallel through iterative denoising
+- Uses bidirectional attention instead of causal masking
+- Offers potential speed improvements during inference
+- Provides controllable quality through diffusion steps
+
+For detailed information, see [MASKED_DIFFUSION.md](MASKED_DIFFUSION.md).
+
+### Training with Masked Diffusion
+
+```bash
+NUM_GPUS=8 examples/training/masked_diffusion_2b-2b.sh
+```
+
+Key parameters:
+- `--model_arch masked_diffusion`: Use masked diffusion architecture
+- `--diffusion_steps 10`: Number of iterative denoising steps
+- `--mask_schedule cosine`: Masking schedule (cosine or linear)
 
 ## Training
 

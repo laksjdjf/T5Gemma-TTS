@@ -15,6 +15,7 @@ except ImportError:
     AutoTokenizer = None
 
 from models.t5gemma import T5GemmaVoiceModel
+from models.masked_diffusion import MaskedDiffusionModel
 from inference_tts_utils import inference_one_sample, normalize_text_with_lang
 
 ############################################################
@@ -90,10 +91,13 @@ def run_inference(
         raise ImportError("transformers is required for text tokenization. Please install it before running inference.")
     tokenizer_name = getattr(args, "text_tokenizer_name", None) or getattr(args, "t5gemma_model_name", "google/t5gemma-b-b-ul2")
     text_tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    
+    # Create model based on architecture
     model_arch = getattr(args, "model_arch", "t5gemma")
-    if model_arch != "t5gemma":
-        raise ValueError(f"VoiceStar support has been removed. Expected model_arch 't5gemma', got {model_arch}")
-    model = T5GemmaVoiceModel(args)
+    if model_arch == "masked_diffusion":
+        model = MaskedDiffusionModel(args)
+    else:
+        model = T5GemmaVoiceModel(args)
 
     # Ensure checkpoint tensors and live model share the requested precision.
     precision_opt = str(getattr(args, "precision", "float32")).lower()
