@@ -12,7 +12,13 @@ import sys
 import argparse
 import torch
 import torchaudio
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+try:
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+except ImportError:
+    print("Error: transformers is not installed.")
+    print("Please install it with: pip install transformers")
+    sys.exit(1)
 
 from data.tokenizer import AudioTokenizer
 from duration_estimator import estimate_duration
@@ -35,11 +41,17 @@ def generate_speech(
     print(f"Loading model from {model_dir}...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
+    # Choose dtype based on device capability
+    if device == "cuda" and torch.cuda.is_bf16_supported():
+        dtype = torch.bfloat16
+    else:
+        dtype = torch.float16
+    
     # Load model
     model = AutoModelForSeq2SeqLM.from_pretrained(
         model_dir,
         trust_remote_code=True,
-        dtype=torch.bfloat16,
+        dtype=dtype,
     ).to(device)
     model.eval()
     
@@ -103,7 +115,9 @@ def generate_speech(
     gen_audio = gen_audio[0].cpu()
     
     # Save
-    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:  # Only create directory if path includes a directory
+        os.makedirs(output_dir, exist_ok=True)
     torchaudio.save(output_path, gen_audio, codec_audio_sr)
     print(f"✓ Audio saved to: {output_path}")
 
