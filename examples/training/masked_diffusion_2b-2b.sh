@@ -18,6 +18,8 @@ EMILIA_YODAS_ROOT="${PROJECT_ROOT}/datasets/emilia-yodas-en_0-9"
 EXP_ROOT="${PROJECT_ROOT}/runs/masked_diffusion_2b-2b"
 
 NUM_GPUS="${NUM_GPUS:-1}"
+# Set your wandb entity (username or team name) via environment variable or edit this line
+WANDB_ENTITY="${WANDB_ENTITY:-your_wandb_entity}"
 BATCH_SIZE=4
 NUM_STEPS=143391
 LR=0.035
@@ -105,5 +107,5 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NUM_GPUS}" "${PROJECT_ROOT}
   --compile 0 \
   --attn_implementation sdpa \
   --ddp_find_unused_parameters 0 \
-  --wandb_entity your_wandb_entity \
+  --wandb_entity "${WANDB_ENTITY}" \
   --resume

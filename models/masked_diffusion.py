@@ -580,9 +580,8 @@ class MaskedDiffusionModel(nn.Module):
         # Expand mask to match codebook dimension
         mask_expanded = mask.unsqueeze(1).expand(-1, n_codebooks, -1)
         
-        # Apply mask - replace masked tokens with mask_token
-        masked_y = y.clone()
-        masked_y[mask_expanded] = self.args.audio_mask_token
+        # Apply mask - replace masked tokens with mask_token (using torch.where for efficiency)
+        masked_y = torch.where(mask_expanded, self.args.audio_mask_token, y)
         
         return masked_y, mask
 
@@ -884,7 +883,9 @@ class MaskedDiffusionModel(nn.Module):
             if num_masked == 0:
                 break
             
-            num_to_unmask = max(1, int(num_masked * unmask_ratio / current_mask_ratio))
+            # Prevent division by zero
+            safe_current_mask_ratio = max(current_mask_ratio, 1e-8)
+            num_to_unmask = max(1, int(num_masked * unmask_ratio / safe_current_mask_ratio))
 
             # Get confidence scores for masked positions
             masked_positions = torch.where(is_masked[0])[0]
@@ -907,13 +908,13 @@ class MaskedDiffusionModel(nn.Module):
             if num_to_unmask < len(masked_positions):
                 _, confident_indices = torch.topk(max_probs, num_to_unmask)
                 positions_to_unmask = masked_positions[confident_indices]
+                tokens_to_assign = sampled_tokens[confident_indices]
             else:
                 positions_to_unmask = masked_positions
+                tokens_to_assign = sampled_tokens
             
             # Update current_y and mask
-            current_y[0, 0, positions_to_unmask] = sampled_tokens[
-                confident_indices if num_to_unmask < len(masked_positions) else torch.arange(len(masked_positions), device=device)
-            ]
+            current_y[0, 0, positions_to_unmask] = tokens_to_assign
             is_masked[0, positions_to_unmask] = False
 
         # Extract generated part (excluding prompt)

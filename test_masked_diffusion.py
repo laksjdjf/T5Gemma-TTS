@@ -24,7 +24,7 @@ def test_cosine_schedule():
     assert abs(cosine_schedule(t1).item() - 0.0) < 1e-6, "At t=1, mask ratio should be 0.0"
     
     # At t=0.5, should be around 0.707 (cos(π/4))
-    expected_mid = math.cos(0.5 * math.pi * 0.5)
+    expected_mid = math.cos(math.pi / 4)
     assert abs(cosine_schedule(t_mid).item() - expected_mid) < 1e-6, "Cosine schedule midpoint mismatch"
     
     print("✓ cosine_schedule tests passed")
@@ -69,7 +69,7 @@ def test_mask_ratio_computation():
     for step in [0, 5, 10]:
         t = step / diffusion_steps
         if args.mask_schedule == "cosine":
-            expected = float(torch.cos(torch.tensor(t * math.pi * 0.5)).item())
+            expected = math.cos(t * math.pi * 0.5)
         else:
             expected = 1.0 - t
         
