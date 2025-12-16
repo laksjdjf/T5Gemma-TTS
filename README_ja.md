@@ -17,6 +17,7 @@ Encoder-Decoder LLMアーキテクチャに基づく多言語Text-to-Speechモ�
 - **Duration Control**: 生成音声の長さを明示的に制御可能（未指定時は自動推定）
 - **Flexible Training**: スクラッチからの学習、学習済みモデルのファインチューニング、LoRAファインチューニングをサポート
 - **Multiple Inference Options**: コマンドライン、HuggingFaceフォーマット、Gradio Web UI
+- **Masked Diffusion**: 高速な並列生成のための非自己回帰マスク拡散モデル（実験的機能）
 
 ## インストール
 
@@ -160,6 +161,28 @@ EXTRA_ARGS="--no_compile --share" docker compose up
 | `--top_p` | 0.9 | Top-p（nucleus）サンプリングパラメータ |
 | `--temperature` | 0.8 | Sampling temperature |
 | `--seed` | 1 | ランダムシード（再現性のため） |
+
+## Masked Diffusion（実験的機能）
+
+T5Gemma-TTSは、標準的な自己回帰生成の代替として、非自己回帰型の**Masked Diffusion**モデルをサポートするようになりました。このアプローチでは：
+
+- 反復的なノイズ除去によりトークンを並列生成
+- 因果マスクの代わりに双方向アテンションを使用
+- 推論時の潜在的な速度向上を提供
+- 拡散ステップ数により品質を制御可能
+
+詳細については、[MASKED_DIFFUSION.md](MASKED_DIFFUSION.md)を参照してください。
+
+### Masked Diffusionによる学習
+
+```bash
+NUM_GPUS=8 examples/training/masked_diffusion_2b-2b.sh
+```
+
+主なパラメータ:
+- `--model_arch masked_diffusion`: マスク拡散アーキテクチャを使用
+- `--diffusion_steps 10`: 反復的ノイズ除去のステップ数
+- `--mask_schedule cosine`: マスクスケジュール（cosineまたはlinear）
 
 ## 学習
 
