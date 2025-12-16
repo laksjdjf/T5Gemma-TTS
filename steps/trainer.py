@@ -28,6 +28,7 @@ from tqdm import tqdm
 from data import combined_dataset
 from data.tokenizer import AudioTokenizer
 from models.t5gemma import T5GemmaVoiceModel
+from models.masked_diffusion import MaskedDiffusionModel
 
 from .optim import Eden, ScaledAdam
 from .trainer_utils import (
@@ -1178,7 +1179,12 @@ class Trainer:
         return len(train_dataset), train_sampler, train_loader, valid_loader
 
     def _setup_models(self):
-        model = T5GemmaVoiceModel(self.args)
+        logging.info(f"Building model architecture: {self.args.model_arch}")
+        
+        if self.args.model_arch == "masked_diffusion":
+            model = MaskedDiffusionModel(self.args)
+        else:  # default to t5gemma
+            model = T5GemmaVoiceModel(self.args)
 
         if self.rank == 0:
             logging.info(model)

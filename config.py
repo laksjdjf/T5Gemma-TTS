@@ -44,7 +44,7 @@ def MyParser():
     parser.add_argument("--dataset_dir", type=str, help="need to be compatible with corresponding dataset py file")
     parser.add_argument("--local_wandb", type=int, default=0, help="if 1, will use local wandb, otherwise use the global one")
     parser.add_argument("--wandb_entity", type=str, default="your-wandb-entity", help="the entity (usually your username) for wandb")
-    parser.add_argument("--model_arch", type=str, default="t5gemma", choices=["t5gemma"], help="select architecture: T5Gemma-based model (VoiceStar removed)")
+    parser.add_argument("--model_arch", type=str, default="t5gemma", choices=["t5gemma", "masked_diffusion"], help="select architecture: t5gemma (autoregressive) or masked_diffusion (non-autoregressive)")
     parser.add_argument("--t5gemma_model_name", type=str, default="google/t5gemma-b-b-ul2", help="Hugging Face repo id or local path for the T5Gemma checkpoint")
     parser.add_argument("--t5_gradient_checkpointing", type=int, default=0, help="Set to 1 to enable gradient checkpointing for T5Gemma (reduces training memory). During inference use_cache is auto-enabled.")
     parser.add_argument("--freeze_t5gemma", type=int, default=0, help="if 1, freeze Transformer weights and only train new heads")
@@ -80,6 +80,9 @@ def MyParser():
     parser.add_argument("--text_tokenizer_name", type=str, default=None, help="Hugging Face tokenizer id to load when text_input_type=text")
     parser.add_argument("--text_folder_name", type=str, default="text", help="folder storing raw text transcripts when using text_input_type=text")
     parser.add_argument("--pseudo_epoch_size", type=int, default=37901, help="only use for Eden scheduler. 37901 is the epoch size in the default optim setting, this is probably too big")
+    # Masked Diffusion parameters
+    parser.add_argument("--diffusion_steps", type=int, default=10, help="number of diffusion steps for masked diffusion model")
+    parser.add_argument("--mask_schedule", type=str, default="cosine", choices=["cosine", "linear"], help="masking schedule for diffusion: cosine or linear")
     # data
     parser.add_argument("--encodec_folder_name", type=str, default="xcodec2_1cb", help="folder where codec codes are stored (xcodec2)")
     parser.add_argument("--manifest_name", type=str, default="manifest_final", help="manifest folder name")
