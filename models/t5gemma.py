@@ -1,5 +1,6 @@
 import logging
 from typing import Callable, Dict, List, Optional, Tuple, Union
+import ast
 
 import torch
 import torch.nn as nn
@@ -359,16 +360,42 @@ class T5GemmaVoiceModel(nn.Module):
             getattr(self.args, "audio_embedding_dropout", 0.0)
         )
 
+        # Multi-token prediction support: create prediction heads for each future position
+        self.num_predict_tokens = getattr(self.args, "num_predict_tokens", 1)
         self.predict_layer = nn.ModuleList(
             [
-                nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size),
-                    nn.GELU(),
-                    nn.Linear(self.hidden_size, audio_vocab_sizes[k]),
-                )
+                nn.ModuleList([
+                    nn.Sequential(
+                        nn.Linear(self.hidden_size, self.hidden_size),
+                        nn.GELU(),
+                        nn.Linear(self.hidden_size, audio_vocab_sizes[k]),
+                    )
+                    for _ in range(self.num_predict_tokens)
+                ])
                 for k in range(self.args.n_codebooks)
             ]
         )
+        
+        # Parse multi-token loss weights
+        multi_token_loss_weight = getattr(self.args, "multi_token_loss_weight", None)
+        if multi_token_loss_weight is not None:
+            if isinstance(multi_token_loss_weight, str):
+                try:
+                    multi_token_loss_weight = ast.literal_eval(multi_token_loss_weight)
+                except (ValueError, SyntaxError) as e:
+                    raise ValueError(
+                        f"Failed to parse multi_token_loss_weight '{multi_token_loss_weight}': {e}"
+                    )
+            # Validate length before creating tensor
+            if len(multi_token_loss_weight) != self.num_predict_tokens:
+                raise ValueError(
+                    f"multi_token_loss_weight length ({len(multi_token_loss_weight)}) "
+                    f"must match num_predict_tokens ({self.num_predict_tokens})"
+                )
+            self.multi_token_loss_weight = torch.tensor(multi_token_loss_weight, dtype=torch.float32)
+        else:
+            # Default: equal weight for all positions
+            self.multi_token_loss_weight = torch.ones(self.num_predict_tokens, dtype=torch.float32)
 
         # Keep metric lightweight; compute top-k accuracy on the fly to avoid large one-hot tensors.
         self.topk_eval = 10
@@ -700,14 +727,35 @@ class T5GemmaVoiceModel(nn.Module):
         )
         decoder_hidden = decoder_outputs.last_hidden_state
 
+        # Multi-token prediction: compute logits for each future position
+        # Shape: [B, K, num_predict_tokens, T, V]
         logits = torch.stack(
             [
-                self.predict_layer[i](decoder_hidden)
+                torch.stack(
+                    [
+                        self.predict_layer[i][pred_idx](decoder_hidden)
+                        for pred_idx in range(self.num_predict_tokens)
+                    ],
+                    dim=1,
+                )
                 for i in range(self.args.n_codebooks)
             ],
             dim=1,
-        )  # [B, K, T, V]
-        logits_use = [logit[:, : new_y_lens[i]] for i, logit in enumerate(logits)]
+        )  # [B, K, num_predict_tokens, T, V]
+        
+        # For single-token prediction (num_predict_tokens=1), squeeze the prediction dimension
+        if self.num_predict_tokens == 1:
+            logits = logits.squeeze(2)  # [B, K, T, V]
+            logits_use = [logit[:, : new_y_lens[i]] for i, logit in enumerate(logits)]
+        else:
+            # For multi-token prediction, we need to reshape for proper alignment
+            # logits[:, :, 0, :, :] predicts token at position t
+            # logits[:, :, 1, :, :] predicts token at position t+1, etc.
+            logits_use = []
+            for i, logit in enumerate(logits):
+                # logit shape: [K, num_predict_tokens, T, V]
+                max_len = new_y_lens[i]
+                logits_use.append(logit[:, :, :max_len])  # [K, num_predict_tokens, T, V]
 
         logits_final = []
         if self.args.n_codebooks == 1:
@@ -734,42 +782,125 @@ class T5GemmaVoiceModel(nn.Module):
                     if sep_positions.ndim > 0
                     else int(sep_positions.item())
                 )
-                logit_trimmed.append(logit[:, prefix_len:])
+                if self.num_predict_tokens == 1:
+                    logit_trimmed.append(logit[:, prefix_len:])
+                else:
+                    logit_trimmed.append(logit[:, :, prefix_len:])
                 target_trimmed.append(target[:, prefix_len:])
             logits_final = logit_trimmed
             targets = target_trimmed
 
-        logits = torch.cat(logits_final, dim=1)  # [K, total_len, V]
-        targets = torch.cat(targets, dim=1)  # [K, total_len]
-
-        losses = []
-        ntokens = []
-        top10acc = []  # store correct-count per codebook to keep semantics with trainer
-        for logit, target in zip(logits, targets):
-            losses.append(
-                F.cross_entropy(
-                    logit,
-                    target,
-                    reduction="mean",
-                    weight=(
-                        self.class_weight.data if self.args.eog_weight != 1 else None
-                    ),
-                    ignore_index=(
-                        self.args.y_sep_token
-                        if getattr(self.args, "y_sep_token", None) is not None
-                        else -100
-                    ),
+        # Handle multi-token prediction loss computation
+        if self.num_predict_tokens == 1:
+            # Standard single-token prediction
+            logits = torch.cat(logits_final, dim=1)  # [K, total_len, V]
+            targets = torch.cat(targets, dim=1)  # [K, total_len]
+            
+            losses = []
+            ntokens = []
+            top10acc = []
+            for logit, target in zip(logits, targets):
+                losses.append(
+                    F.cross_entropy(
+                        logit,
+                        target,
+                        reduction="mean",
+                        weight=(
+                            self.class_weight.data if self.args.eog_weight != 1 else None
+                        ),
+                        ignore_index=(
+                            self.args.y_sep_token
+                            if getattr(self.args, "y_sep_token", None) is not None
+                            else -100
+                        ),
+                    )
                 )
-            )
 
-            # Manual top-k accuracy without torchmetrics one-hot expansion (saves a few GB).
-            with torch.no_grad():
-                k_val = min(self.topk_eval, logit.shape[-1])
-                topk_idx = logit.topk(k_val, dim=-1).indices  # [T, k]
-                correct = (topk_idx == target.unsqueeze(-1)).any(dim=-1)
-                top10acc.append(correct.sum())
+                # Manual top-k accuracy without torchmetrics one-hot expansion (saves a few GB).
+                with torch.no_grad():
+                    k_val = min(self.topk_eval, logit.shape[-1])
+                    topk_idx = logit.topk(k_val, dim=-1).indices  # [T, k]
+                    correct = (topk_idx == target.unsqueeze(-1)).any(dim=-1)
+                    top10acc.append(correct.sum())
 
-            ntokens.append(target.numel())
+                ntokens.append(target.numel())
+        else:
+            # Multi-token prediction: compute losses for each prediction head
+            # logits_final shape: [K, num_predict_tokens, T, V]
+            # targets shape: [K, T]
+            losses = []
+            ntokens = []
+            top10acc = []
+            multi_token_loss_weight = self.multi_token_loss_weight.to(logits_final[0].device)
+            
+            for codebook_idx in range(self.args.n_codebooks):
+                codebook_logits = logits_final[codebook_idx]  # [num_predict_tokens, T, V]
+                codebook_targets = targets[codebook_idx]  # [T]
+                
+                codebook_losses = []
+                codebook_correct_counts = []
+                codebook_token_counts = []
+                
+                for pred_idx in range(self.num_predict_tokens):
+                    # Get logits for this prediction head
+                    pred_logits = codebook_logits[pred_idx]  # [T, V]
+                    
+                    # Shift targets to align with prediction position
+                    # pred_idx=0: predict current token (t->t)
+                    # pred_idx=1: predict next token (t->t+1)
+                    # pred_idx=2: predict token after next (t->t+2), etc.
+                    if pred_idx == 0:
+                        pred_targets = codebook_targets
+                        pred_logits_aligned = pred_logits
+                    else:
+                        # Shift: use logits at position t to predict target at position t+pred_idx
+                        if pred_logits.shape[0] > pred_idx:
+                            pred_logits_aligned = pred_logits[:-pred_idx]  # [T-pred_idx, V]
+                            pred_targets = codebook_targets[pred_idx:]  # [T-pred_idx]
+                        else:
+                            # Not enough sequence length for this prediction, skip
+                            # Only log first occurrence to avoid spam
+                            if not hasattr(self, '_short_seq_logged'):
+                                logging.warning(
+                                    f"Sequence too short ({pred_logits.shape[0]}) for prediction "
+                                    f"position {pred_idx}. This warning will only appear once."
+                                )
+                                self._short_seq_logged = True
+                            continue
+                    
+                    # Compute loss for this prediction head
+                    pred_loss = F.cross_entropy(
+                        pred_logits_aligned,
+                        pred_targets,
+                        reduction="mean",
+                        weight=(
+                            self.class_weight.data if self.args.eog_weight != 1 else None
+                        ),
+                        ignore_index=(
+                            self.args.y_sep_token
+                            if getattr(self.args, "y_sep_token", None) is not None
+                            else -100
+                        ),
+                    )
+                    
+                    # Weight the loss for this prediction position
+                    weighted_loss = pred_loss * multi_token_loss_weight[pred_idx]
+                    codebook_losses.append(weighted_loss)
+                    
+                    # Compute accuracy for first prediction head only (for consistency)
+                    if pred_idx == 0:
+                        with torch.no_grad():
+                            k_val = min(self.topk_eval, pred_logits_aligned.shape[-1])
+                            topk_idx = pred_logits_aligned.topk(k_val, dim=-1).indices
+                            correct = (topk_idx == pred_targets.unsqueeze(-1)).any(dim=-1)
+                            codebook_correct_counts.append(correct.sum())
+                            codebook_token_counts.append(pred_targets.numel())
+                
+                # Average losses across prediction heads
+                if codebook_losses:
+                    losses.append(torch.stack(codebook_losses).mean())
+                    top10acc.append(sum(codebook_correct_counts))
+                    ntokens.append(sum(codebook_token_counts))
 
         total_tokens = sum(ntokens)
         if getattr(self.args, "codebook_weight", None) is not None:
@@ -1020,7 +1151,14 @@ class T5GemmaVoiceModel(nn.Module):
             return token_id, prev_token, consec_silence_count
 
         while True:
-            logits = self.predict_layer[0](last_hidden).squeeze(0).squeeze(0)
+            # For multi-token prediction, use the first prediction head (position 0)
+            # which predicts the next immediate token
+            if self.num_predict_tokens == 1:
+                logits = self.predict_layer[0](last_hidden).squeeze(0).squeeze(0)
+            else:
+                # Use first prediction head (pred_idx=0) which predicts current/next token
+                logits = self.predict_layer[0][0](last_hidden).squeeze(0).squeeze(0)
+            
             token_id, prev_token, consec_silence_count = sample_helper(
                 logits,
                 top_k,

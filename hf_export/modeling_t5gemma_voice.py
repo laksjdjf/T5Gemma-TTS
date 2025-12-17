@@ -431,13 +431,18 @@ class T5GemmaVoiceForConditionalGeneration(PreTrainedModel, GenerationMixin):
         )
         self.audio_dropout = nn.Dropout(0.0)
 
+        # Multi-token prediction support
+        self.num_predict_tokens = getattr(self.args, "num_predict_tokens", 1)
         self.predict_layer = nn.ModuleList(
             [
-                nn.Sequential(
-                    nn.Linear(self.hidden_size, self.hidden_size),
-                    nn.GELU(),
-                    nn.Linear(self.hidden_size, audio_vocab_sizes[k]),
-                )
+                nn.ModuleList([
+                    nn.Sequential(
+                        nn.Linear(self.hidden_size, self.hidden_size),
+                        nn.GELU(),
+                        nn.Linear(self.hidden_size, audio_vocab_sizes[k]),
+                    )
+                    for _ in range(self.num_predict_tokens)
+                ])
                 for k in range(self.args.n_codebooks)
             ]
         )
@@ -751,7 +756,12 @@ class T5GemmaVoiceForConditionalGeneration(PreTrainedModel, GenerationMixin):
             return token_id, prev_token, consec_silence_count
 
         while True:
-            logits = self.predict_layer[0](last_hidden).squeeze(0).squeeze(0)
+            # For multi-token prediction, use the first prediction head (position 0)
+            if self.num_predict_tokens == 1:
+                logits = self.predict_layer[0](last_hidden).squeeze(0).squeeze(0)
+            else:
+                logits = self.predict_layer[0][0](last_hidden).squeeze(0).squeeze(0)
+            
             token_id, prev_token, consec_silence_count = sample_helper(
                 logits,
                 top_k,

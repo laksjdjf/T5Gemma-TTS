@@ -17,6 +17,7 @@ Encoder-Decoder LLMアーキテクチャに基づく多言語Text-to-Speechモ�
 - **Duration Control**: 生成音声の長さを明示的に制御可能（未指定時は自動推定）
 - **Flexible Training**: スクラッチからの学習、学習済みモデルのファインチューニング、LoRAファインチューニングをサポート
 - **Multiple Inference Options**: コマンドライン、HuggingFaceフォーマット、Gradio Web UI
+- **Multi-Token Prediction**: 学習改善のためのマルチトークン予測をサポート（[ドキュメント](docs/MULTI_TOKEN_PREDICTION.md)参照）
 
 ## インストール
 
