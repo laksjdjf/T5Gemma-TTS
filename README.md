@@ -19,6 +19,7 @@ For model details, audio samples, and technical information, please refer to the
 - **Duration Control**: Explicit control over generated audio length (auto-estimation when not specified)
 - **Flexible Training**: Full training, fine-tuning, and LoRA fine-tuning support
 - **Multiple Inference Options**: Command-line, HuggingFace format, and Gradio UI
+- **Multi-Token Prediction**: Optional multi-token prediction for improved training (see [documentation](docs/MULTI_TOKEN_PREDICTION.md))
 
 ## Installation
 
