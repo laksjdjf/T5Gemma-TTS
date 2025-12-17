@@ -132,6 +132,10 @@ def MyParser():
     parser.add_argument('--audio_embedding_dropout', type=float, default=0, help='Dropout for audio embedding')
     parser.add_argument('--eog_weight', type=float, default=1.0, help='Weight for End of generation token')
     parser.add_argument('--load_model_from', type=str, default=None, help='Path to load model from, this will be effective last, so will overwrite all previous load, including resume')
+    
+    # multi-token prediction
+    parser.add_argument('--num_predict_tokens', type=int, default=1, help='Number of tokens to predict at each decoder step (1=standard autoregressive, >1=multi-token prediction)')
+    parser.add_argument('--multi_token_loss_weight', type=str, default=None, help='Loss weights for different prediction positions, e.g. "[1.0, 0.5, 0.25]" for 3-token prediction')
 
 
     ## below are args for the new long model
