@@ -5,6 +5,7 @@ Tests both single-token (backward compatible) and multi-token modes.
 """
 
 import argparse
+import ast
 import sys
 
 
@@ -155,7 +156,7 @@ def test_model_structure():
         # Test loss weight parsing
         print("  Testing loss weight parsing...")
         multi_token_loss_weight = '[1.0, 0.5, 0.25]'
-        loss_weights = eval(multi_token_loss_weight)
+        loss_weights = ast.literal_eval(multi_token_loss_weight)
         loss_weights = torch.tensor(loss_weights, dtype=torch.float32)
         
         assert len(loss_weights) == num_predict_tokens, "Loss weight length mismatch"

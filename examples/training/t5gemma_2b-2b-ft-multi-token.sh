@@ -106,7 +106,7 @@ torchrun --standalone --nnodes=1 --nproc_per_node="${NUM_GPUS}" "${PROJECT_ROOT}
   --compile 0 \
   --attn_implementation sdpa \
   --ddp_find_unused_parameters 0 \
-  --wandb_entity your_wandb_entity \
+  --wandb_entity "${WANDB_ENTITY:-your_wandb_entity}" \
   --num_predict_tokens "${NUM_PREDICT_TOKENS}" \
   --multi_token_loss_weight "${MULTI_TOKEN_LOSS_WEIGHT}" \
   --load_model_from "${PRETRAINED_MODEL_PATH}"

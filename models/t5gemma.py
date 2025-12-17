@@ -1,5 +1,6 @@
 import logging
 from typing import Callable, Dict, List, Optional, Tuple, Union
+import ast
 
 import torch
 import torch.nn as nn
@@ -379,17 +380,22 @@ class T5GemmaVoiceModel(nn.Module):
         multi_token_loss_weight = getattr(self.args, "multi_token_loss_weight", None)
         if multi_token_loss_weight is not None:
             if isinstance(multi_token_loss_weight, str):
-                multi_token_loss_weight = eval(multi_token_loss_weight)
+                try:
+                    multi_token_loss_weight = ast.literal_eval(multi_token_loss_weight)
+                except (ValueError, SyntaxError) as e:
+                    raise ValueError(
+                        f"Failed to parse multi_token_loss_weight '{multi_token_loss_weight}': {e}"
+                    )
+            # Validate length before creating tensor
+            if len(multi_token_loss_weight) != self.num_predict_tokens:
+                raise ValueError(
+                    f"multi_token_loss_weight length ({len(multi_token_loss_weight)}) "
+                    f"must match num_predict_tokens ({self.num_predict_tokens})"
+                )
             self.multi_token_loss_weight = torch.tensor(multi_token_loss_weight, dtype=torch.float32)
         else:
             # Default: equal weight for all positions
             self.multi_token_loss_weight = torch.ones(self.num_predict_tokens, dtype=torch.float32)
-        
-        if len(self.multi_token_loss_weight) != self.num_predict_tokens:
-            raise ValueError(
-                f"multi_token_loss_weight length ({len(self.multi_token_loss_weight)}) "
-                f"must match num_predict_tokens ({self.num_predict_tokens})"
-            )
 
         # Keep metric lightweight; compute top-k accuracy on the fly to avoid large one-hot tensors.
         self.topk_eval = 10
@@ -853,6 +859,13 @@ class T5GemmaVoiceModel(nn.Module):
                             pred_targets = codebook_targets[pred_idx:]  # [T-pred_idx]
                         else:
                             # Not enough sequence length for this prediction, skip
+                            # Only log first occurrence to avoid spam
+                            if not hasattr(self, '_short_seq_logged'):
+                                logging.warning(
+                                    f"Sequence too short ({pred_logits.shape[0]}) for prediction "
+                                    f"position {pred_idx}. This warning will only appear once."
+                                )
+                                self._short_seq_logged = True
                             continue
                     
                     # Compute loss for this prediction head
